@@ -119,8 +119,12 @@ button:active { background: #3d8b40; }
   <div id="scoreList"></div>
 </div>
 <div class="credit">Plant Jump by CCG</div>
-
 <script>
+// Platform detection for dynamic difficulty
+function isMobileDevice() {
+  return /Android|iPhone|iPad|iPod|Windows Phone|webOS|BlackBerry|Opera Mini|IEMobile|Mobile/i.test(navigator.userAgent);
+}
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -148,20 +152,21 @@ let clouds = [];
 let particles = [];
 let speedEffect = { active: false, timer: 0 };
 
-// Configuration
+// Config: adaptive spawn interval for platform
 const CONFIG = {
   gravity: 0.6,
-  jumpPower: -11.2, // 80% of normal (-14)
+  jumpPower: -11.2,
   groundHeight: 60,
   plantSize: 40,
   obstacleSize: 35,
-  minSpawnInterval: 80, // Minimum frames between spawns to ensure jumpable
-  maxSpawnInterval: 160 // Maximum frames between spawns
+  // Increased difficulty: more pathogens for PC
+  minSpawnInterval: isMobileDevice() ? 80 : 50,
+  maxSpawnInterval: isMobileDevice() ? 160 : 100
 };
 
 function initGame() {
   resizeCanvas();
-  // Ensure backward compatibility
+  // Ensure backward compatibility for scores
   if (highScore > 0 && !topScores.includes(highScore)) {
     topScores.push(highScore);
     topScores.sort((a, b) => b - a);
@@ -170,7 +175,6 @@ function initGame() {
   }
   highScore = topScores.length ? Math.max(...topScores) : 0;
   document.getElementById('highScore').textContent = highScore;
-  
   plant = {
     x: 80,
     y: canvas.height - CONFIG.groundHeight - CONFIG.plantSize,
@@ -179,7 +183,6 @@ function initGame() {
     dy: 0,
     jumping: false
   };
-  
   obstacles = [];
   clouds = [];
   particles = [];
@@ -188,7 +191,6 @@ function initGame() {
   frame = 0;
   nextSpawnFrame = frame + CONFIG.minSpawnInterval + Math.floor(Math.random() * (CONFIG.maxSpawnInterval - CONFIG.minSpawnInterval));
   speedEffect = { active: false, timer: 0 };
-  
   // Create clouds
   for (let i = 0; i < 6; i++) {
     clouds.push({
@@ -198,7 +200,6 @@ function initGame() {
       speed: 0.5 + Math.random() * 1
     });
   }
-  
   document.getElementById('score').textContent = score;
   document.getElementById('speedText').style.display = 'none';
   document.getElementById('leaderboard').style.display = 'none';
@@ -237,8 +238,7 @@ function spawnObstacle() {
 function createSpeedEffect(type) {
   speedEffect.active = true;
   speedEffect.timer = 30;
-  particles = []; // No particles to avoid any blinking effect
-  
+  particles = [];
   // Show speed text
   const speedText = document.getElementById('speedText');
   speedText.textContent = type === 'super' ? '⚡ SUPER SPEED! ⚡' : '💨 Speed Up! 💨';
@@ -250,19 +250,15 @@ function createSpeedEffect(type) {
 
 function update() {
   if (gameState !== 'playing') return;
-  
   frame++;
-  
   // Update plant
   plant.y += plant.dy;
   plant.dy += CONFIG.gravity;
-  
   if (plant.y > canvas.height - CONFIG.groundHeight - plant.height) {
     plant.y = canvas.height - CONFIG.groundHeight - plant.height;
     plant.dy = 0;
     plant.jumping = false;
   }
-  
   // Update clouds
   clouds.forEach(cloud => {
     cloud.x -= cloud.speed;
@@ -271,18 +267,15 @@ function update() {
       cloud.y = Math.random() * canvas.height * 0.4;
     }
   });
-  
   // Spawn obstacles at random intervals
   if (frame >= nextSpawnFrame) {
     spawnObstacle();
     nextSpawnFrame = frame + CONFIG.minSpawnInterval + Math.floor(Math.random() * (CONFIG.maxSpawnInterval - CONFIG.minSpawnInterval));
   }
-  
   // Update obstacles
   obstacles.forEach(obs => obs.x -= speed);
   obstacles = obstacles.filter(obs => obs.x + obs.width > 0);
-  
-  // Collision detection with more leniency
+  // Collision detection
   for (let obs of obstacles) {
     if (plant.x < obs.x + obs.width - 12 &&
         plant.x + plant.width > obs.x + 12 &&
@@ -292,19 +285,16 @@ function update() {
       gameState = 'gameOver';
       document.getElementById('finalScore').textContent = score;
       document.getElementById('gameOver').style.display = 'block';
-      
       // Update top scores
       topScores.push(score);
       topScores.sort((a, b) => b - a);
       topScores = topScores.slice(0, 5);
       localStorage.setItem('plantJumpTopScores', JSON.stringify(topScores));
-      
       if (score > highScore) {
         highScore = score;
         localStorage.setItem('plantJumpHigh', highScore);
       }
-      
-      // Populate and show leaderboard with medals
+      // Display leaderboard
       const scoreList = document.getElementById('scoreList');
       scoreList.innerHTML = '';
       const medals = ['🥇', '🥈', '🥉'];
@@ -319,17 +309,14 @@ function update() {
       return;
     }
   }
-  
   // Update score and speed
   score++;
   document.getElementById('score').textContent = score;
-  
   if (score % 100 === 0) {
     speed += 0.3;
     createSpeedEffect(score % 1000 === 0 ? 'super' : 'normal');
   }
-  
-  // Update particles (empty since no particles)
+  // Update particles (none used)
   if (speedEffect.active) {
     speedEffect.timer--;
     if (speedEffect.timer <= 0) {
@@ -342,16 +329,13 @@ function update() {
 }
 
 function render() {
-  // Clear canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  
   // Sky gradient
   const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
   gradient.addColorStop(0, '#87CEEB');
   gradient.addColorStop(1, '#E0F6FF');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  
   // Draw clouds
   ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
   clouds.forEach(cloud => {
@@ -361,18 +345,13 @@ function render() {
     ctx.arc(cloud.x - cloud.size * 0.5, cloud.y + cloud.size * 0.2, cloud.size * 0.7, 0, Math.PI * 2);
     ctx.fill();
   });
-  
   // Draw ground
   ctx.fillStyle = '#4CAF50';
   ctx.fillRect(0, canvas.height - CONFIG.groundHeight, canvas.width, CONFIG.groundHeight);
-  
-  // No particles drawn
-  
   // Draw plant
   ctx.font = `${CONFIG.plantSize}px Arial`;
   ctx.textAlign = 'center';
   ctx.fillText('🪴', plant.x + plant.width/2, plant.y + plant.height * 0.8);
-  
   // Draw obstacles
   ctx.font = `${CONFIG.obstacleSize}px Arial`;
   obstacles.forEach(obs => {
@@ -390,23 +369,18 @@ function gameLoop() {
 
 // Event listeners
 canvas.addEventListener('click', jump);
-canvas.addEventListener('touchstart', e => {
-  e.preventDefault();
-  jump();
-});
-
+canvas.addEventListener('touchstart', e => { e.preventDefault(); jump(); });
 document.addEventListener('keydown', e => {
   if (e.code === 'Space' || e.code === 'ArrowUp') {
     e.preventDefault();
     jump();
   }
 });
-
 window.addEventListener('resize', resizeCanvas);
-
 // Initialize
 resizeCanvas();
 document.getElementById('highScore').textContent = highScore;
 </script>
 </body>
 </html>
+
