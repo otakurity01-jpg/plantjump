@@ -7,7 +7,7 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-  font-family: Arial, sans-serif;
+  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', Arial, sans-serif;
   background: #e0f7e9;
   display: flex;
   flex-direction: column;
@@ -23,6 +23,7 @@ canvas {
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   cursor: pointer;
+  display: block; /* Ensure canvas displays properly */
 }
 #ui {
   position: absolute;
@@ -94,6 +95,23 @@ button:active { background: #3d8b40; }
   display: none;
   z-index: 20;
 }
+
+/* Media queries for better responsiveness */
+@media screen and (max-width: 768px) {
+  #ui {
+    font-size: 16px;
+  }
+  canvas {
+    border-width: 2px;
+  }
+}
+
+@media screen and (min-width: 1200px) {
+  canvas {
+    max-width: 1000px;
+    max-height: 500px;
+  }
+}
 </style>
 </head>
 <body>
@@ -119,31 +137,87 @@ button:active { background: #3d8b40; }
   <div id="scoreList"></div>
 </div>
 <div class="credit">Plant Jump by CCG</div>
-<script>
-// Platform detection for dynamic difficulty
-function isMobileDevice() {
-  return /Android|iPhone|iPad|iPod|Windows Phone|webOS|BlackBerry|Opera Mini|IEMobile|Mobile/i.test(navigator.userAgent);
-}
 
+<script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// Responsive canvas sizing
+// Check for emoji support and provide fallbacks
+function checkEmojiSupport() {
+  const testCanvas = document.createElement('canvas');
+  const testCtx = testCanvas.getContext('2d');
+  testCanvas.width = 32;
+  testCanvas.height = 32;
+
+  testCtx.font = '20px Arial';
+  testCtx.textAlign = 'center';
+  testCtx.textBaseline = 'middle';
+  testCtx.fillText('🪴', 16, 16);
+
+  const imageData = testCtx.getImageData(0, 0, 32, 32);
+  const data = imageData.data;
+
+  // Check if any pixels are non-transparent (emoji rendered)
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] !== 0) return true;
+  }
+  return false;
+}
+
+const hasEmojiSupport = checkEmojiSupport();
+
+// Responsive canvas sizing with better desktop support
 function resizeCanvas() {
-  const maxWidth = Math.min(window.innerWidth * 0.95, 1000);
-  const maxHeight = Math.min(window.innerHeight * 0.7, 500);
-  canvas.width = maxWidth;
-  canvas.height = maxHeight;
+  const container = document.body;
+  const containerWidth = container.clientWidth;
+  const containerHeight = container.clientHeight;
+
+  // Better responsive sizing logic
+  let targetWidth, targetHeight;
+
+  if (window.innerWidth <= 768) {
+    // Mobile devices
+    targetWidth = Math.min(containerWidth * 0.95, 600);
+    targetHeight = Math.min(containerHeight * 0.6, 300);
+  } else {
+    // Desktop and tablets
+    targetWidth = Math.min(containerWidth * 0.8, 1000);
+    targetHeight = Math.min(containerHeight * 0.7, 500);
+  }
+
+  // Maintain aspect ratio
+  const aspectRatio = 2; // width:height = 2:1
+  if (targetWidth / targetHeight > aspectRatio) {
+    targetWidth = targetHeight * aspectRatio;
+  } else {
+    targetHeight = targetWidth / aspectRatio;
+  }
+
+  canvas.width = Math.max(400, targetWidth); // Minimum width
+  canvas.height = Math.max(200, targetHeight); // Minimum height
+
+  // Update canvas style for crisp rendering
+  canvas.style.width = canvas.width + 'px';
+  canvas.style.height = canvas.height + 'px';
+
+  // Scale context for high DPI displays
+  const dpr = window.devicePixelRatio || 1;
+  if (dpr > 1) {
+    canvas.width *= dpr;
+    canvas.height *= dpr;
+    ctx.scale(dpr, dpr);
+    canvas.style.width = (canvas.width / dpr) + 'px';
+    canvas.style.height = (canvas.height / dpr) + 'px';
+  }
 }
 
 // Game variables
 let gameState = 'menu'; // 'menu', 'playing', 'gameOver'
 let score = 0;
 let highScore = parseInt(localStorage.getItem('plantJumpHigh') || '0');
-let topScores = JSON.parse(localStorage.getItem('plantJumpTopScores') || '[]');
 let speed = 6;
 let frame = 0;
-let nextSpawnFrame = 120;
+let restartTapCount = 0;
 
 // Game objects
 let plant = {};
@@ -152,45 +226,44 @@ let clouds = [];
 let particles = [];
 let speedEffect = { active: false, timer: 0 };
 
-// Config: adaptive spawn interval for platform
+// Configuration with better desktop compatibility
 const CONFIG = {
   gravity: 0.6,
   jumpPower: -11.2,
+  doubleJumpPower: -9,
   groundHeight: 60,
   plantSize: 40,
   obstacleSize: 35,
-  // Increased difficulty: more pathogens for PC
-  minSpawnInterval: isMobileDevice() ? 80 : 50,
-  maxSpawnInterval: isMobileDevice() ? 160 : 100
+  // Fallback symbols if emojis don't work
+  plantSymbol: hasEmojiSupport ? '🪴' : 'P',
+  obstacleSymbols: hasEmojiSupport ? ['🦠','🪱','🧬','🍄','🧫','🐛'] : ['*','~','@','#','%','&']
 };
 
 function initGame() {
   resizeCanvas();
-  // Ensure backward compatibility for scores
-  if (highScore > 0 && !topScores.includes(highScore)) {
-    topScores.push(highScore);
-    topScores.sort((a, b) => b - a);
-    topScores = topScores.slice(0, 5);
-    localStorage.setItem('plantJumpTopScores', JSON.stringify(topScores));
-  }
-  highScore = topScores.length ? Math.max(...topScores) : 0;
   document.getElementById('highScore').textContent = highScore;
+
   plant = {
     x: 80,
     y: canvas.height - CONFIG.groundHeight - CONFIG.plantSize,
     width: CONFIG.plantSize,
     height: CONFIG.plantSize,
     dy: 0,
-    jumping: false
+    jumping: false,
+    doubleJumpAvailable: false,
+    rotation: 0,
+    rotationSpeed: 0
   };
+
   obstacles = [];
   clouds = [];
   particles = [];
   score = 0;
   speed = 6;
   frame = 0;
-  nextSpawnFrame = frame + CONFIG.minSpawnInterval + Math.floor(Math.random() * (CONFIG.maxSpawnInterval - CONFIG.minSpawnInterval));
   speedEffect = { active: false, timer: 0 };
+  restartTapCount = 0;
+
   // Create clouds
   for (let i = 0; i < 6; i++) {
     clouds.push({
@@ -200,9 +273,9 @@ function initGame() {
       speed: 0.5 + Math.random() * 1
     });
   }
+
   document.getElementById('score').textContent = score;
   document.getElementById('speedText').style.display = 'none';
-  document.getElementById('leaderboard').style.display = 'none';
 }
 
 function startGame() {
@@ -221,25 +294,67 @@ function jump() {
   if (gameState === 'playing' && !plant.jumping) {
     plant.dy = CONFIG.jumpPower;
     plant.jumping = true;
+    plant.doubleJumpAvailable = true;
+    plant.rotationSpeed = 15;
+  } else if (gameState === 'playing' && plant.jumping && plant.doubleJumpAvailable && plant.dy > -5) {
+    plant.dy = CONFIG.doubleJumpPower;
+    plant.doubleJumpAvailable = false;
+    plant.rotationSpeed = 20;
+  } else if (gameState === 'gameOver') {
+    restartTapCount++;
+    if (restartTapCount >= 3) {
+      restartTapCount = 0;
+      restartGame();
+    }
   }
 }
 
 function spawnObstacle() {
-  const pathogens = ['🦠','🪱','🧬','🍄','🧫','🐛'];
+  const commonPathogens = hasEmojiSupport ? ['🦠','🪱','🍄'] : ['*','~','#'];
+  const rarePathogens = hasEmojiSupport ? ['🧬','🧫','🐛'] : ['@','%','&'];
+
+  let selectedPathogen;
+  const rand = Math.random();
+
+  if (rand < 0.7) {
+    selectedPathogen = commonPathogens[Math.floor(Math.random() * commonPathogens.length)];
+  } else {
+    selectedPathogen = rarePathogens[Math.floor(Math.random() * rarePathogens.length)];
+  }
+
+  const shouldFloat = score >= 5000 && Math.random() < 0.3;
+
   obstacles.push({
     x: canvas.width,
     y: canvas.height - CONFIG.groundHeight - CONFIG.obstacleSize,
     width: CONFIG.obstacleSize,
     height: CONFIG.obstacleSize,
-    emoji: pathogens[Math.floor(Math.random() * pathogens.length)]
+    emoji: selectedPathogen,
+    floating: shouldFloat,
+    floatOffset: 0,
+    floatSpeed: 0.05 + Math.random() * 0.03,
+    baseY: canvas.height - CONFIG.groundHeight - CONFIG.obstacleSize
   });
 }
 
 function createSpeedEffect(type) {
   speedEffect.active = true;
-  speedEffect.timer = 30;
+  speedEffect.timer = type === 'super' ? 60 : 30;
   particles = [];
-  // Show speed text
+
+  const count = type === 'super' ? 15 : 8;
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      vx: (Math.random() - 0.5) * 6,
+      vy: (Math.random() - 0.5) * 6,
+      life: 25 + Math.random() * 15,
+      maxLife: 25 + Math.random() * 15,
+      type: 'spark'
+    });
+  }
+
   const speedText = document.getElementById('speedText');
   speedText.textContent = type === 'super' ? '⚡ SUPER SPEED! ⚡' : '💨 Speed Up! 💨';
   speedText.style.display = 'block';
@@ -250,15 +365,29 @@ function createSpeedEffect(type) {
 
 function update() {
   if (gameState !== 'playing') return;
+
   frame++;
+
   // Update plant
   plant.y += plant.dy;
   plant.dy += CONFIG.gravity;
+
+  if (plant.jumping) {
+    plant.rotation += plant.rotationSpeed;
+    plant.rotationSpeed *= 0.95;
+  } else {
+    plant.rotation = 0;
+  }
+
   if (plant.y > canvas.height - CONFIG.groundHeight - plant.height) {
     plant.y = canvas.height - CONFIG.groundHeight - plant.height;
     plant.dy = 0;
     plant.jumping = false;
+    plant.doubleJumpAvailable = false;
+    plant.rotation = 0;
+    plant.rotationSpeed = 0;
   }
+
   // Update clouds
   clouds.forEach(cloud => {
     cloud.x -= cloud.speed;
@@ -267,75 +396,84 @@ function update() {
       cloud.y = Math.random() * canvas.height * 0.4;
     }
   });
-  // Spawn obstacles at random intervals
-  if (frame >= nextSpawnFrame) {
+
+  if (frame % 100 === 0) {
     spawnObstacle();
-    nextSpawnFrame = frame + CONFIG.minSpawnInterval + Math.floor(Math.random() * (CONFIG.maxSpawnInterval - CONFIG.minSpawnInterval));
   }
+
   // Update obstacles
-  obstacles.forEach(obs => obs.x -= speed);
+  obstacles.forEach(obs => {
+    obs.x -= speed;
+
+    if (obs.floating) {
+      obs.floatOffset += obs.floatSpeed;
+      const floatRange = 40;
+      obs.y = obs.baseY + Math.sin(obs.floatOffset) * floatRange;
+    }
+  });
   obstacles = obstacles.filter(obs => obs.x + obs.width > 0);
+
   // Collision detection
   for (let obs of obstacles) {
-    if (plant.x < obs.x + obs.width - 12 &&
-        plant.x + plant.width > obs.x + 12 &&
-        plant.y < obs.y + obs.height - 12 &&
-        plant.y + plant.height > obs.y + 12) {
-      
+    if (plant.x < obs.x + obs.width - 8 &&
+        plant.x + plant.width > obs.x + 8 &&
+        plant.y < obs.y + obs.height - 8 &&
+        plant.y + plant.height > obs.y + 8) {
+
       gameState = 'gameOver';
       document.getElementById('finalScore').textContent = score;
       document.getElementById('gameOver').style.display = 'block';
-      // Update top scores
-      topScores.push(score);
-      topScores.sort((a, b) => b - a);
-      topScores = topScores.slice(0, 5);
-      localStorage.setItem('plantJumpTopScores', JSON.stringify(topScores));
+
       if (score > highScore) {
         highScore = score;
         localStorage.setItem('plantJumpHigh', highScore);
+        document.getElementById('highScore').textContent = highScore;
       }
-      // Display leaderboard
-      const scoreList = document.getElementById('scoreList');
-      scoreList.innerHTML = '';
-      const medals = ['🥇', '🥈', '🥉'];
-      topScores.forEach((s, i) => {
-        const div = document.createElement('div');
-        const prefix = i < 3 ? medals[i] : `${i + 1}.`;
-        div.textContent = `${prefix} ${s}`;
-        scoreList.appendChild(div);
-      });
-      document.getElementById('leaderboard').style.display = 'block';
-      document.getElementById('highScore').textContent = highScore;
       return;
     }
   }
-  // Update score and speed
+
   score++;
   document.getElementById('score').textContent = score;
-  if (score % 100 === 0) {
-    speed += 0.3;
-    createSpeedEffect(score % 1000 === 0 ? 'super' : 'normal');
+
+  if (score % 1000 === 0) {
+    speed += 1.5;
+    createSpeedEffect('super');
+  } else if (score % 100 === 0) {
+    speed += 0.5;
+    createSpeedEffect('normal');
   }
-  // Update particles (none used)
+
+  // Update particles
   if (speedEffect.active) {
     speedEffect.timer--;
     if (speedEffect.timer <= 0) {
       speedEffect.active = false;
       particles = [];
     } else {
-      particles = particles.filter(p => p.life > 0);
+      particles = particles.filter(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life--;
+        p.vx *= 0.98;
+        p.vy *= 0.98;
+        return p.life > 0;
+      });
     }
   }
 }
 
 function render() {
+  // Clear canvas with proper dimensions
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
   // Sky gradient
   const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
   gradient.addColorStop(0, '#87CEEB');
   gradient.addColorStop(1, '#E0F6FF');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
   // Draw clouds
   ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
   clouds.forEach(cloud => {
@@ -345,17 +483,61 @@ function render() {
     ctx.arc(cloud.x - cloud.size * 0.5, cloud.y + cloud.size * 0.2, cloud.size * 0.7, 0, Math.PI * 2);
     ctx.fill();
   });
+
   // Draw ground
   ctx.fillStyle = '#4CAF50';
   ctx.fillRect(0, canvas.height - CONFIG.groundHeight, canvas.width, CONFIG.groundHeight);
-  // Draw plant
-  ctx.font = `${CONFIG.plantSize}px Arial`;
+
+  // Draw particles
+  particles.forEach(p => {
+    const alpha = p.life / p.maxLife;
+    ctx.fillStyle = `rgba(255, 165, 0, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2 + alpha * 2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Screen flash for super speed
+  if (speedEffect.active && speedEffect.timer > 50) {
+    const flashAlpha = (speedEffect.timer - 50) / 10;
+    ctx.fillStyle = `rgba(255, 200, 100, ${flashAlpha * 0.05})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // Draw plant with better font settings
+  ctx.save();
+  ctx.translate(plant.x + plant.width/2, plant.y + plant.height/2);
+  ctx.rotate((plant.rotation * Math.PI) / 180);
+
+  // Better font stack for cross-platform emoji support
+  ctx.font = `${CONFIG.plantSize}px 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', Arial, sans-serif`;
   ctx.textAlign = 'center';
-  ctx.fillText('🪴', plant.x + plant.width/2, plant.y + plant.height * 0.8);
-  // Draw obstacles
-  ctx.font = `${CONFIG.obstacleSize}px Arial`;
+  ctx.textBaseline = 'middle';
+
+  // Add fallback for no emoji support
+  if (!hasEmojiSupport) {
+    ctx.fillStyle = '#4CAF50';
+    ctx.fillRect(-CONFIG.plantSize/2, -CONFIG.plantSize/2, CONFIG.plantSize, CONFIG.plantSize);
+    ctx.fillStyle = 'white';
+    ctx.font = `${CONFIG.plantSize * 0.8}px Arial`;
+  }
+
+  ctx.fillText(CONFIG.plantSymbol, 0, 0);
+  ctx.restore();
+
+  // Draw obstacles with better font settings
+  ctx.font = `${CONFIG.obstacleSize}px 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
   obstacles.forEach(obs => {
-    ctx.fillText(obs.emoji, obs.x + obs.width/2, obs.y + obs.height * 0.8);
+    if (!hasEmojiSupport) {
+      ctx.fillStyle = '#ff4444';
+      ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+      ctx.fillStyle = 'white';
+      ctx.font = `${CONFIG.obstacleSize * 0.8}px Arial`;
+    }
+    ctx.fillText(obs.emoji, obs.x + obs.width/2, obs.y + obs.height/2);
   });
 }
 
@@ -367,20 +549,34 @@ function gameLoop() {
   }
 }
 
-// Event listeners
+// Enhanced event listeners with better desktop support
 canvas.addEventListener('click', jump);
-canvas.addEventListener('touchstart', e => { e.preventDefault(); jump(); });
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  jump();
+}, { passive: false });
+
 document.addEventListener('keydown', e => {
   if (e.code === 'Space' || e.code === 'ArrowUp') {
     e.preventDefault();
     jump();
   }
 });
-window.addEventListener('resize', resizeCanvas);
-// Initialize
+
+// Better resize handling
+window.addEventListener('resize', () => {
+  setTimeout(resizeCanvas, 100); // Debounce resize
+});
+
+// Initialize with better cross-platform support
+window.addEventListener('load', () => {
+  resizeCanvas();
+  document.getElementById('highScore').textContent = highScore;
+});
+
+// Fallback initialization
 resizeCanvas();
 document.getElementById('highScore').textContent = highScore;
 </script>
 </body>
 </html>
-
