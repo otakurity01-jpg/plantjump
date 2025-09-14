@@ -1,1 +1,1 @@
-go to https://otakurity01-jpg.github.io/plantjump/ yo play
+go to https://otakurity01-jpg.github.io/plantjump/ to play
