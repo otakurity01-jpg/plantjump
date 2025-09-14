@@ -72,14 +72,49 @@ button:active { background: #3d8b40; }
 }
 #leaderboard {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  background: rgba(255,255,255,0.9);
-  border: 2px solid #4caf50;
-  border-radius: 8px;
-  padding: 10px;
-  font-size: 12px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(255,255,255,0.95);
+  border: 3px solid #4caf50;
+  border-radius: 12px;
+  padding: 20px;
+  font-size: 14px;
   display: none;
+  z-index: 25;
+  min-width: 300px;
+  text-align: center;
+}
+#leaderboard h4 {
+  color: #2e7d32;
+  margin-bottom: 15px;
+  font-size: 18px;
+}
+.score-entry {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 10px;
+  margin: 5px 0;
+  background: rgba(76, 175, 80, 0.1);
+  border-radius: 8px;
+  border-left: 4px solid #4caf50;
+}
+.score-entry.new-record {
+  background: rgba(255, 193, 7, 0.2);
+  border-left-color: #ffc107;
+  animation: highlight 2s ease-in-out;
+}
+@keyframes highlight {
+  0%, 100% { background: rgba(255, 193, 7, 0.2); }
+  50% { background: rgba(255, 193, 7, 0.4); }
+}
+.rank {
+  font-weight: bold;
+  color: #2e7d32;
+}
+.score-value {
+  font-weight: bold;
+  color: #1976d2;
 }
 #gameOver {
   position: absolute;
@@ -112,11 +147,15 @@ button:active { background: #3d8b40; }
 <div id="gameOver">
   <h2>Game Over! 💀</h2>
   <p>Score: <span id="finalScore">0</span></p>
+  <p id="newRecordMessage" style="color: #ffc107; margin: 10px 0; display: none;">🏆 New High Score!</p>
+  <button onclick="showLeaderboard()">View Leaderboard</button>
   <button onclick="restartGame()">Play Again</button>
 </div>
 <div id="leaderboard">
-  <h4>Top Scores</h4>
+  <h4>🏆 Top 5 Scores</h4>
   <div id="scoreList"></div>
+  <button onclick="hideLeaderboard()">Close</button>
+  <button onclick="restartGame()">Play Again</button>
 </div>
 <div class="credit">Plant Jump by CCG</div>
 
@@ -124,25 +163,75 @@ button:active { background: #3d8b40; }
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// FIXED: Proper responsive canvas sizing WITHOUT breaking UI
+// FIXED: Proper responsive canvas sizing
 function resizeCanvas() {
   const maxWidth = Math.min(window.innerWidth * 0.95, 1000);
   const maxHeight = Math.min(window.innerHeight * 0.7, 500);
 
-  // CRITICAL FIX: Set canvas dimensions AND CSS size to match
   canvas.width = maxWidth;
   canvas.height = maxHeight;
+
+  // CRITICAL: Ensure CSS matches canvas dimensions
   canvas.style.width = maxWidth + 'px';
   canvas.style.height = maxHeight + 'px';
 }
 
+// ADDED: Leaderboard management system
+class LeaderboardManager {
+  constructor() {
+    this.storageKey = 'plantJumpLeaderboard';
+    this.maxScores = 5;
+  }
+
+  getScores() {
+    const stored = localStorage.getItem(this.storageKey);
+    return stored ? JSON.parse(stored) : [];
+  }
+
+  addScore(newScore) {
+    let scores = this.getScores();
+
+    // Add new score with timestamp
+    scores.push({
+      score: newScore,
+      date: new Date().toLocaleDateString(),
+      timestamp: Date.now()
+    });
+
+    // Sort by score (highest first)
+    scores.sort((a, b) => b.score - a.score);
+
+    // Keep only top 5
+    scores = scores.slice(0, this.maxScores);
+
+    // Save back to localStorage
+    localStorage.setItem(this.storageKey, JSON.stringify(scores));
+
+    // Return the rank of the new score (1-based), or 0 if not in top 5
+    const newScoreIndex = scores.findIndex(s => s.score === newScore && s.timestamp === scores.find(sc => sc.score === newScore).timestamp);
+    return newScoreIndex >= 0 ? newScoreIndex + 1 : 0;
+  }
+
+  getHighScore() {
+    const scores = this.getScores();
+    return scores.length > 0 ? scores[0].score : 0;
+  }
+
+  isNewRecord(score) {
+    return score > this.getHighScore();
+  }
+}
+
+const leaderboard = new LeaderboardManager();
+
 // Game variables
-let gameState = 'menu'; // 'menu', 'playing', 'gameOver'
+let gameState = 'menu';
 let score = 0;
-let highScore = parseInt(localStorage.getItem('plantJumpHigh') || '0');
+let highScore = leaderboard.getHighScore();
 let speed = 6;
 let frame = 0;
 let restartTapCount = 0;
+let newRecordRank = 0;
 
 // Game objects
 let plant = {};
@@ -154,8 +243,8 @@ let speedEffect = { active: false, timer: 0 };
 // Configuration
 const CONFIG = {
   gravity: 0.6,
-  jumpPower: -11.2, // 80% of normal (-14)
-  doubleJumpPower: -9, // Weaker second jump
+  jumpPower: -11.2,
+  doubleJumpPower: -9,
   groundHeight: 60,
   plantSize: 40,
   obstacleSize: 35
@@ -163,6 +252,7 @@ const CONFIG = {
 
 function initGame() {
   resizeCanvas();
+  highScore = leaderboard.getHighScore();
   document.getElementById('highScore').textContent = highScore;
 
   plant = {
@@ -185,6 +275,7 @@ function initGame() {
   frame = 0;
   speedEffect = { active: false, timer: 0 };
   restartTapCount = 0;
+  newRecordRank = 0;
 
   // Create clouds
   for (let i = 0; i < 6; i++) {
@@ -203,6 +294,7 @@ function initGame() {
 function startGame() {
   document.getElementById('instructions').style.display = 'none';
   document.getElementById('gameOver').style.display = 'none';
+  document.getElementById('leaderboard').style.display = 'none';
   gameState = 'playing';
   initGame();
   gameLoop();
@@ -212,20 +304,55 @@ function restartGame() {
   startGame();
 }
 
+// ADDED: Leaderboard display functions
+function showLeaderboard() {
+  document.getElementById('gameOver').style.display = 'none';
+  document.getElementById('leaderboard').style.display = 'block';
+  updateLeaderboardDisplay();
+}
+
+function hideLeaderboard() {
+  document.getElementById('leaderboard').style.display = 'none';
+  document.getElementById('gameOver').style.display = 'block';
+}
+
+function updateLeaderboardDisplay() {
+  const scores = leaderboard.getScores();
+  const scoreList = document.getElementById('scoreList');
+
+  if (scores.length === 0) {
+    scoreList.innerHTML = '<div style="color: #666; font-style: italic;">No scores yet. Be the first!</div>';
+    return;
+  }
+
+  let html = '';
+  scores.forEach((scoreData, index) => {
+    const rank = index + 1;
+    const isNewRecord = rank === newRecordRank;
+    const rankEmoji = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '🏅';
+
+    html += `
+      <div class="score-entry ${isNewRecord ? 'new-record' : ''}">
+        <span class="rank">${rankEmoji} #${rank}</span>
+        <span class="score-value">${scoreData.score}</span>
+      </div>
+    `;
+  });
+
+  scoreList.innerHTML = html;
+}
+
 function jump() {
   if (gameState === 'playing' && !plant.jumping) {
-    // First jump
     plant.dy = CONFIG.jumpPower;
     plant.jumping = true;
     plant.doubleJumpAvailable = true;
-    plant.rotationSpeed = 15; // Start spinning
+    plant.rotationSpeed = 15;
   } else if (gameState === 'playing' && plant.jumping && plant.doubleJumpAvailable && plant.dy > -5) {
-    // Double jump - only if falling or at peak
     plant.dy = CONFIG.doubleJumpPower;
     plant.doubleJumpAvailable = false;
-    plant.rotationSpeed = 20; // Faster spin for double jump
+    plant.rotationSpeed = 20;
   } else if (gameState === 'gameOver') {
-    // Secret restart mechanism - tap 3 times
     restartTapCount++;
     if (restartTapCount >= 3) {
       restartTapCount = 0;
@@ -235,22 +362,19 @@ function jump() {
 }
 
 function spawnObstacle() {
-  const commonPathogens = ['🦠','🪱','🍄']; // More frequent
-  const rarePathogens = ['🧬','🧫','🐛']; // Less frequent  
+  const commonPathogens = ['🦠','🪱','🍄'];
+  const rarePathogens = ['🧬','🧫','🐛'];
 
   let selectedPathogen;
   const rand = Math.random();
 
   if (rand < 0.7) {
-    // 70% chance for common pathogens
     selectedPathogen = commonPathogens[Math.floor(Math.random() * commonPathogens.length)];
   } else {
-    // 30% chance for rare pathogens
     selectedPathogen = rarePathogens[Math.floor(Math.random() * rarePathogens.length)];
   }
 
-  // After 5000 points, some pathogens move up and down
-  const shouldFloat = score >= 5000 && Math.random() < 0.3; // 30% chance to float after 5000 points
+  const shouldFloat = score >= 5000 && Math.random() < 0.3;
 
   obstacles.push({
     x: canvas.width,
@@ -260,7 +384,7 @@ function spawnObstacle() {
     emoji: selectedPathogen,
     floating: shouldFloat,
     floatOffset: 0,
-    floatSpeed: 0.05 + Math.random() * 0.03, // Random float speed
+    floatSpeed: 0.05 + Math.random() * 0.03,
     baseY: canvas.height - CONFIG.groundHeight - CONFIG.obstacleSize
   });
 }
@@ -279,11 +403,10 @@ function createSpeedEffect(type) {
       vy: (Math.random() - 0.5) * 6,
       life: 25 + Math.random() * 15,
       maxLife: 25 + Math.random() * 15,
-      type: 'spark' // Only spark effects now
+      type: 'spark'
     });
   }
 
-  // Show speed text
   const speedText = document.getElementById('speedText');
   speedText.textContent = type === 'super' ? '⚡ SUPER SPEED! ⚡' : '💨 Speed Up! 💨';
   speedText.style.display = 'block';
@@ -301,12 +424,11 @@ function update() {
   plant.y += plant.dy;
   plant.dy += CONFIG.gravity;
 
-  // Update rotation while jumping
   if (plant.jumping) {
     plant.rotation += plant.rotationSpeed;
-    plant.rotationSpeed *= 0.95; // Gradually slow down rotation
+    plant.rotationSpeed *= 0.95;
   } else {
-    plant.rotation = 0; // Reset rotation when on ground
+    plant.rotation = 0;
   }
 
   if (plant.y > canvas.height - CONFIG.groundHeight - plant.height) {
@@ -327,7 +449,6 @@ function update() {
     }
   });
 
-  // Spawn obstacles (slightly less frequent to account for difficulty)
   if (frame % 100 === 0) {
     spawnObstacle();
   }
@@ -336,11 +457,9 @@ function update() {
   obstacles.forEach(obs => {
     obs.x -= speed;
 
-    // Update floating pathogens (after 5000 points)
     if (obs.floating) {
       obs.floatOffset += obs.floatSpeed;
-      // Move up and down with sine wave, limited range for balance
-      const floatRange = 40; // Maximum 40px up/down movement
+      const floatRange = 40;
       obs.y = obs.baseY + Math.sin(obs.floatOffset) * floatRange;
     }
   });
@@ -353,20 +472,28 @@ function update() {
         plant.y < obs.y + obs.height - 8 &&
         plant.y + plant.height > obs.y + 8) {
 
+      // ADDED: Handle game over with leaderboard
       gameState = 'gameOver';
       document.getElementById('finalScore').textContent = score;
-      document.getElementById('gameOver').style.display = 'block';
 
-      if (score > highScore) {
-        highScore = score;
-        localStorage.setItem('plantJumpHigh', highScore);
+      // Add score to leaderboard and check if it's a new record
+      newRecordRank = leaderboard.addScore(score);
+
+      // Update high score display
+      const newHighScore = leaderboard.getHighScore();
+      if (newHighScore > highScore) {
+        highScore = newHighScore;
         document.getElementById('highScore').textContent = highScore;
+        document.getElementById('newRecordMessage').style.display = 'block';
+      } else {
+        document.getElementById('newRecordMessage').style.display = 'none';
       }
+
+      document.getElementById('gameOver').style.display = 'block';
       return;
     }
   }
 
-  // Update score and speed
   score++;
   document.getElementById('score').textContent = score;
 
@@ -398,7 +525,6 @@ function update() {
 }
 
 function render() {
-  // Clear canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // Sky gradient
@@ -422,25 +548,22 @@ function render() {
   ctx.fillStyle = '#4CAF50';
   ctx.fillRect(0, canvas.height - CONFIG.groundHeight, canvas.width, CONFIG.groundHeight);
 
-  // Draw particles (speed effects - sparks only)
+  // Draw particles
   particles.forEach(p => {
     const alpha = p.life / p.maxLife;
-
-    // Only spark effects now
     ctx.fillStyle = `rgba(255, 165, 0, ${alpha})`;
     ctx.beginPath();
     ctx.arc(p.x, p.y, 2 + alpha * 2, 0, Math.PI * 2);
     ctx.fill();
   });
 
-  // Mild screen flash for super speed (much subtler)
   if (speedEffect.active && speedEffect.timer > 50) {
     const flashAlpha = (speedEffect.timer - 50) / 10;
     ctx.fillStyle = `rgba(255, 200, 100, ${flashAlpha * 0.05})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
-  // Draw plant with rotation
+  // Draw plant
   ctx.save();
   ctx.translate(plant.x + plant.width/2, plant.y + plant.height/2);
   ctx.rotate((plant.rotation * Math.PI) / 180);
