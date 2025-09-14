@@ -7,7 +7,7 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', Arial, sans-serif;
+  font-family: Arial, sans-serif;
   background: #e0f7e9;
   display: flex;
   flex-direction: column;
@@ -23,7 +23,7 @@ canvas {
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   cursor: pointer;
-  display: block; /* Ensure canvas displays properly */
+  display: block;
 }
 #ui {
   position: absolute;
@@ -95,27 +95,10 @@ button:active { background: #3d8b40; }
   display: none;
   z-index: 20;
 }
-
-/* Media queries for better responsiveness */
-@media screen and (max-width: 768px) {
-  #ui {
-    font-size: 16px;
-  }
-  canvas {
-    border-width: 2px;
-  }
-}
-
-@media screen and (min-width: 1200px) {
-  canvas {
-    max-width: 1000px;
-    max-height: 500px;
-  }
-}
 </style>
 </head>
 <body>
-<canvas id="gameCanvas" width="800" height="400"></canvas>
+<canvas id="gameCanvas"></canvas>
 <div id="ui">
   <div>Score: <span id="score">0</span></div>
   <div>High: <span id="highScore">0</span></div>
@@ -142,77 +125,24 @@ button:active { background: #3d8b40; }
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// Check for emoji support and provide fallbacks
-function checkEmojiSupport() {
-  const testCanvas = document.createElement('canvas');
-  const testCtx = testCanvas.getContext('2d');
-  testCanvas.width = 32;
-  testCanvas.height = 32;
-
-  testCtx.font = '20px Arial';
-  testCtx.textAlign = 'center';
-  testCtx.textBaseline = 'middle';
-  testCtx.fillText('🪴', 16, 16);
-
-  const imageData = testCtx.getImageData(0, 0, 32, 32);
-  const data = imageData.data;
-
-  // Check if any pixels are non-transparent (emoji rendered)
-  for (let i = 3; i < data.length; i += 4) {
-    if (data[i] !== 0) return true;
-  }
-  return false;
-}
-
-const hasEmojiSupport = checkEmojiSupport();
-
-// Responsive canvas sizing with better desktop support
+// FIXED: Proper responsive canvas sizing
 function resizeCanvas() {
-  const container = document.body;
-  const containerWidth = container.clientWidth;
-  const containerHeight = container.clientHeight;
+  const maxWidth = Math.min(window.innerWidth * 0.95, 1000);
+  const maxHeight = Math.min(window.innerHeight * 0.7, 500);
 
-  // Better responsive sizing logic
-  let targetWidth, targetHeight;
+  // Set canvas internal dimensions 
+  canvas.width = maxWidth;
+  canvas.height = maxHeight;
 
-  if (window.innerWidth <= 768) {
-    // Mobile devices
-    targetWidth = Math.min(containerWidth * 0.95, 600);
-    targetHeight = Math.min(containerHeight * 0.6, 300);
-  } else {
-    // Desktop and tablets
-    targetWidth = Math.min(containerWidth * 0.8, 1000);
-    targetHeight = Math.min(containerHeight * 0.7, 500);
-  }
+  // CRITICAL: Ensure CSS matches canvas dimensions exactly
+  canvas.style.width = maxWidth + 'px';
+  canvas.style.height = maxHeight + 'px';
 
-  // Maintain aspect ratio
-  const aspectRatio = 2; // width:height = 2:1
-  if (targetWidth / targetHeight > aspectRatio) {
-    targetWidth = targetHeight * aspectRatio;
-  } else {
-    targetHeight = targetWidth / aspectRatio;
-  }
-
-  canvas.width = Math.max(400, targetWidth); // Minimum width
-  canvas.height = Math.max(200, targetHeight); // Minimum height
-
-  // Update canvas style for crisp rendering
-  canvas.style.width = canvas.width + 'px';
-  canvas.style.height = canvas.height + 'px';
-
-  // Scale context for high DPI displays
-  const dpr = window.devicePixelRatio || 1;
-  if (dpr > 1) {
-    canvas.width *= dpr;
-    canvas.height *= dpr;
-    ctx.scale(dpr, dpr);
-    canvas.style.width = (canvas.width / dpr) + 'px';
-    canvas.style.height = (canvas.height / dpr) + 'px';
-  }
+  console.log(`Canvas: ${canvas.width}x${canvas.height}, Plant will be at y=${canvas.height - 60 - 40}`);
 }
 
 // Game variables
-let gameState = 'menu'; // 'menu', 'playing', 'gameOver'
+let gameState = 'menu';
 let score = 0;
 let highScore = parseInt(localStorage.getItem('plantJumpHigh') || '0');
 let speed = 6;
@@ -226,23 +156,22 @@ let clouds = [];
 let particles = [];
 let speedEffect = { active: false, timer: 0 };
 
-// Configuration with better desktop compatibility
+// Configuration
 const CONFIG = {
   gravity: 0.6,
   jumpPower: -11.2,
   doubleJumpPower: -9,
   groundHeight: 60,
   plantSize: 40,
-  obstacleSize: 35,
-  // Fallback symbols if emojis don't work
-  plantSymbol: hasEmojiSupport ? '🪴' : 'P',
-  obstacleSymbols: hasEmojiSupport ? ['🦠','🪱','🧬','🍄','🧫','🐛'] : ['*','~','@','#','%','&']
+  obstacleSize: 35
 };
 
 function initGame() {
+  // FIXED: Call resizeCanvas first, then initialize plant position
   resizeCanvas();
   document.getElementById('highScore').textContent = highScore;
 
+  // FIXED: Plant position calculated AFTER canvas resize
   plant = {
     x: 80,
     y: canvas.height - CONFIG.groundHeight - CONFIG.plantSize,
@@ -254,6 +183,8 @@ function initGame() {
     rotation: 0,
     rotationSpeed: 0
   };
+
+  console.log(`Plant positioned at: x=${plant.x}, y=${plant.y}, canvas.height=${canvas.height}`);
 
   obstacles = [];
   clouds = [];
@@ -310,8 +241,8 @@ function jump() {
 }
 
 function spawnObstacle() {
-  const commonPathogens = hasEmojiSupport ? ['🦠','🪱','🍄'] : ['*','~','#'];
-  const rarePathogens = hasEmojiSupport ? ['🧬','🧫','🐛'] : ['@','%','&'];
+  const commonPathogens = ['🦠','🪱','🍄'];
+  const rarePathogens = ['🧬','🧫','🐛'];
 
   let selectedPathogen;
   const rand = Math.random();
@@ -379,8 +310,10 @@ function update() {
     plant.rotation = 0;
   }
 
-  if (plant.y > canvas.height - CONFIG.groundHeight - plant.height) {
-    plant.y = canvas.height - CONFIG.groundHeight - plant.height;
+  // FIXED: Ground collision uses current canvas height
+  const groundY = canvas.height - CONFIG.groundHeight - plant.height;
+  if (plant.y > groundY) {
+    plant.y = groundY;
     plant.dy = 0;
     plant.jumping = false;
     plant.doubleJumpAvailable = false;
@@ -464,7 +397,7 @@ function update() {
 }
 
 function render() {
-  // Clear canvas with proper dimensions
+  // Clear with current canvas size
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // Sky gradient
@@ -497,46 +430,28 @@ function render() {
     ctx.fill();
   });
 
-  // Screen flash for super speed
+  // Screen flash
   if (speedEffect.active && speedEffect.timer > 50) {
     const flashAlpha = (speedEffect.timer - 50) / 10;
     ctx.fillStyle = `rgba(255, 200, 100, ${flashAlpha * 0.05})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
-  // Draw plant with better font settings
+  // FIXED: Draw plant with proper positioning
   ctx.save();
   ctx.translate(plant.x + plant.width/2, plant.y + plant.height/2);
   ctx.rotate((plant.rotation * Math.PI) / 180);
-
-  // Better font stack for cross-platform emoji support
-  ctx.font = `${CONFIG.plantSize}px 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', Arial, sans-serif`;
+  ctx.font = `${CONFIG.plantSize}px Arial`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-
-  // Add fallback for no emoji support
-  if (!hasEmojiSupport) {
-    ctx.fillStyle = '#4CAF50';
-    ctx.fillRect(-CONFIG.plantSize/2, -CONFIG.plantSize/2, CONFIG.plantSize, CONFIG.plantSize);
-    ctx.fillStyle = 'white';
-    ctx.font = `${CONFIG.plantSize * 0.8}px Arial`;
-  }
-
-  ctx.fillText(CONFIG.plantSymbol, 0, 0);
+  ctx.fillText('🪴', 0, 0);
   ctx.restore();
 
-  // Draw obstacles with better font settings
-  ctx.font = `${CONFIG.obstacleSize}px 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', Arial, sans-serif`;
+  // Draw obstacles
+  ctx.font = `${CONFIG.obstacleSize}px Arial`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-
   obstacles.forEach(obs => {
-    if (!hasEmojiSupport) {
-      ctx.fillStyle = '#ff4444';
-      ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
-      ctx.fillStyle = 'white';
-      ctx.font = `${CONFIG.obstacleSize * 0.8}px Arial`;
-    }
     ctx.fillText(obs.emoji, obs.x + obs.width/2, obs.y + obs.height/2);
   });
 }
@@ -549,12 +464,12 @@ function gameLoop() {
   }
 }
 
-// Enhanced event listeners with better desktop support
+// Event listeners
 canvas.addEventListener('click', jump);
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
   jump();
-}, { passive: false });
+});
 
 document.addEventListener('keydown', e => {
   if (e.code === 'Space' || e.code === 'ArrowUp') {
@@ -563,20 +478,29 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// Better resize handling
+// FIXED: Proper resize handling
 window.addEventListener('resize', () => {
-  setTimeout(resizeCanvas, 100); // Debounce resize
+  if (gameState === 'playing') {
+    // Don't resize during gameplay to avoid disruption
+    return;
+  }
+  resizeCanvas();
 });
 
-// Initialize with better cross-platform support
-window.addEventListener('load', () => {
-  resizeCanvas();
+// FIXED: Initialize properly
+document.addEventListener('DOMContentLoaded', () => {
+  resizeCanvas();  
   document.getElementById('highScore').textContent = highScore;
+  console.log('Game initialized with canvas size:', canvas.width, 'x', canvas.height);
 });
 
 // Fallback initialization
-resizeCanvas();
-document.getElementById('highScore').textContent = highScore;
+setTimeout(() => {
+  if (canvas.width === 300) { // Default canvas size means it wasn't initialized
+    resizeCanvas();
+    document.getElementById('highScore').textContent = highScore;
+  }
+}, 100);
 </script>
 </body>
 </html>
