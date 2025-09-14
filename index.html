@@ -23,7 +23,6 @@ canvas {
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   cursor: pointer;
-  display: block;
 }
 #ui {
   position: absolute;
@@ -125,24 +124,20 @@ button:active { background: #3d8b40; }
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// FIXED: Proper responsive canvas sizing
+// FIXED: Proper responsive canvas sizing WITHOUT breaking UI
 function resizeCanvas() {
   const maxWidth = Math.min(window.innerWidth * 0.95, 1000);
   const maxHeight = Math.min(window.innerHeight * 0.7, 500);
 
-  // Set canvas internal dimensions 
+  // CRITICAL FIX: Set canvas dimensions AND CSS size to match
   canvas.width = maxWidth;
   canvas.height = maxHeight;
-
-  // CRITICAL: Ensure CSS matches canvas dimensions exactly
   canvas.style.width = maxWidth + 'px';
   canvas.style.height = maxHeight + 'px';
-
-  console.log(`Canvas: ${canvas.width}x${canvas.height}, Plant will be at y=${canvas.height - 60 - 40}`);
 }
 
 // Game variables
-let gameState = 'menu';
+let gameState = 'menu'; // 'menu', 'playing', 'gameOver'
 let score = 0;
 let highScore = parseInt(localStorage.getItem('plantJumpHigh') || '0');
 let speed = 6;
@@ -159,19 +154,17 @@ let speedEffect = { active: false, timer: 0 };
 // Configuration
 const CONFIG = {
   gravity: 0.6,
-  jumpPower: -11.2,
-  doubleJumpPower: -9,
+  jumpPower: -11.2, // 80% of normal (-14)
+  doubleJumpPower: -9, // Weaker second jump
   groundHeight: 60,
   plantSize: 40,
   obstacleSize: 35
 };
 
 function initGame() {
-  // FIXED: Call resizeCanvas first, then initialize plant position
   resizeCanvas();
   document.getElementById('highScore').textContent = highScore;
 
-  // FIXED: Plant position calculated AFTER canvas resize
   plant = {
     x: 80,
     y: canvas.height - CONFIG.groundHeight - CONFIG.plantSize,
@@ -183,8 +176,6 @@ function initGame() {
     rotation: 0,
     rotationSpeed: 0
   };
-
-  console.log(`Plant positioned at: x=${plant.x}, y=${plant.y}, canvas.height=${canvas.height}`);
 
   obstacles = [];
   clouds = [];
@@ -223,15 +214,18 @@ function restartGame() {
 
 function jump() {
   if (gameState === 'playing' && !plant.jumping) {
+    // First jump
     plant.dy = CONFIG.jumpPower;
     plant.jumping = true;
     plant.doubleJumpAvailable = true;
-    plant.rotationSpeed = 15;
+    plant.rotationSpeed = 15; // Start spinning
   } else if (gameState === 'playing' && plant.jumping && plant.doubleJumpAvailable && plant.dy > -5) {
+    // Double jump - only if falling or at peak
     plant.dy = CONFIG.doubleJumpPower;
     plant.doubleJumpAvailable = false;
-    plant.rotationSpeed = 20;
+    plant.rotationSpeed = 20; // Faster spin for double jump
   } else if (gameState === 'gameOver') {
+    // Secret restart mechanism - tap 3 times
     restartTapCount++;
     if (restartTapCount >= 3) {
       restartTapCount = 0;
@@ -241,19 +235,22 @@ function jump() {
 }
 
 function spawnObstacle() {
-  const commonPathogens = ['🦠','🪱','🍄'];
-  const rarePathogens = ['🧬','🧫','🐛'];
+  const commonPathogens = ['🦠','🪱','🍄']; // More frequent
+  const rarePathogens = ['🧬','🧫','🐛']; // Less frequent  
 
   let selectedPathogen;
   const rand = Math.random();
 
   if (rand < 0.7) {
+    // 70% chance for common pathogens
     selectedPathogen = commonPathogens[Math.floor(Math.random() * commonPathogens.length)];
   } else {
+    // 30% chance for rare pathogens
     selectedPathogen = rarePathogens[Math.floor(Math.random() * rarePathogens.length)];
   }
 
-  const shouldFloat = score >= 5000 && Math.random() < 0.3;
+  // After 5000 points, some pathogens move up and down
+  const shouldFloat = score >= 5000 && Math.random() < 0.3; // 30% chance to float after 5000 points
 
   obstacles.push({
     x: canvas.width,
@@ -263,7 +260,7 @@ function spawnObstacle() {
     emoji: selectedPathogen,
     floating: shouldFloat,
     floatOffset: 0,
-    floatSpeed: 0.05 + Math.random() * 0.03,
+    floatSpeed: 0.05 + Math.random() * 0.03, // Random float speed
     baseY: canvas.height - CONFIG.groundHeight - CONFIG.obstacleSize
   });
 }
@@ -282,10 +279,11 @@ function createSpeedEffect(type) {
       vy: (Math.random() - 0.5) * 6,
       life: 25 + Math.random() * 15,
       maxLife: 25 + Math.random() * 15,
-      type: 'spark'
+      type: 'spark' // Only spark effects now
     });
   }
 
+  // Show speed text
   const speedText = document.getElementById('speedText');
   speedText.textContent = type === 'super' ? '⚡ SUPER SPEED! ⚡' : '💨 Speed Up! 💨';
   speedText.style.display = 'block';
@@ -303,17 +301,16 @@ function update() {
   plant.y += plant.dy;
   plant.dy += CONFIG.gravity;
 
+  // Update rotation while jumping
   if (plant.jumping) {
     plant.rotation += plant.rotationSpeed;
-    plant.rotationSpeed *= 0.95;
+    plant.rotationSpeed *= 0.95; // Gradually slow down rotation
   } else {
-    plant.rotation = 0;
+    plant.rotation = 0; // Reset rotation when on ground
   }
 
-  // FIXED: Ground collision uses current canvas height
-  const groundY = canvas.height - CONFIG.groundHeight - plant.height;
-  if (plant.y > groundY) {
-    plant.y = groundY;
+  if (plant.y > canvas.height - CONFIG.groundHeight - plant.height) {
+    plant.y = canvas.height - CONFIG.groundHeight - plant.height;
     plant.dy = 0;
     plant.jumping = false;
     plant.doubleJumpAvailable = false;
@@ -330,6 +327,7 @@ function update() {
     }
   });
 
+  // Spawn obstacles (slightly less frequent to account for difficulty)
   if (frame % 100 === 0) {
     spawnObstacle();
   }
@@ -338,9 +336,11 @@ function update() {
   obstacles.forEach(obs => {
     obs.x -= speed;
 
+    // Update floating pathogens (after 5000 points)
     if (obs.floating) {
       obs.floatOffset += obs.floatSpeed;
-      const floatRange = 40;
+      // Move up and down with sine wave, limited range for balance
+      const floatRange = 40; // Maximum 40px up/down movement
       obs.y = obs.baseY + Math.sin(obs.floatOffset) * floatRange;
     }
   });
@@ -366,6 +366,7 @@ function update() {
     }
   }
 
+  // Update score and speed
   score++;
   document.getElementById('score').textContent = score;
 
@@ -397,7 +398,7 @@ function update() {
 }
 
 function render() {
-  // Clear with current canvas size
+  // Clear canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // Sky gradient
@@ -421,23 +422,25 @@ function render() {
   ctx.fillStyle = '#4CAF50';
   ctx.fillRect(0, canvas.height - CONFIG.groundHeight, canvas.width, CONFIG.groundHeight);
 
-  // Draw particles
+  // Draw particles (speed effects - sparks only)
   particles.forEach(p => {
     const alpha = p.life / p.maxLife;
+
+    // Only spark effects now
     ctx.fillStyle = `rgba(255, 165, 0, ${alpha})`;
     ctx.beginPath();
     ctx.arc(p.x, p.y, 2 + alpha * 2, 0, Math.PI * 2);
     ctx.fill();
   });
 
-  // Screen flash
+  // Mild screen flash for super speed (much subtler)
   if (speedEffect.active && speedEffect.timer > 50) {
     const flashAlpha = (speedEffect.timer - 50) / 10;
     ctx.fillStyle = `rgba(255, 200, 100, ${flashAlpha * 0.05})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
-  // FIXED: Draw plant with proper positioning
+  // Draw plant with rotation
   ctx.save();
   ctx.translate(plant.x + plant.width/2, plant.y + plant.height/2);
   ctx.rotate((plant.rotation * Math.PI) / 180);
@@ -478,29 +481,11 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// FIXED: Proper resize handling
-window.addEventListener('resize', () => {
-  if (gameState === 'playing') {
-    // Don't resize during gameplay to avoid disruption
-    return;
-  }
-  resizeCanvas();
-});
+window.addEventListener('resize', resizeCanvas);
 
-// FIXED: Initialize properly
-document.addEventListener('DOMContentLoaded', () => {
-  resizeCanvas();  
-  document.getElementById('highScore').textContent = highScore;
-  console.log('Game initialized with canvas size:', canvas.width, 'x', canvas.height);
-});
-
-// Fallback initialization
-setTimeout(() => {
-  if (canvas.width === 300) { // Default canvas size means it wasn't initialized
-    resizeCanvas();
-    document.getElementById('highScore').textContent = highScore;
-  }
-}, 100);
+// Initialize
+resizeCanvas();
+document.getElementById('highScore').textContent = highScore;
 </script>
 </body>
 </html>
